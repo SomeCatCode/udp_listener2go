@@ -1,6 +1,6 @@
-# UDP2Receive
+# udp_listener2go
 
-UDP2Receive ist ein kleiner UDP Listener für Debug zwecke. Sollte ein JSON content ankommen, so wird dieser geparsed ausgegeben.
+udp_listener2go ist ein kleiner UDP Listener für Debug zwecke. Sollte ein JSON content ankommen, so wird dieser geparsed ausgegeben.
 
 ## Verwendung
 Nach dem Klonen des Repositories können Sie das Programm mit go run . ausführen oder eine ausführbare Datei mit go build erstellen.

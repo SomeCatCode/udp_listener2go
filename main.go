@@ -6,6 +6,7 @@ import (
 	"log"
 	"net"
 	"os"
+	"path/filepath"
 	"time"
 )
 
@@ -13,26 +14,34 @@ type Config struct {
 	Port int `json:"port"`
 }
 
-func main() {
-	configFile := "config.json"
+func getConfig() (*Config, error) {
+	// Ermittle den Pfad der ausführbaren Datei und das Verzeichnis, in dem sie sich befindet.
+	exPath, err := os.Executable()
+	if err != nil {
+		log.Fatalf("Fehler beim Ermitteln des Executable-Pfads: %v", err)
+	}
+	exDir := filepath.Dir(exPath)
+
+	configFile := filepath.Join(exDir, "udp_listener2go.json")
 
 	// Überprüfe, ob Config-Datei existiert
 	if _, err := os.Stat(configFile); os.IsNotExist(err) {
 		// Erstelle Config-Datei mit Standardwerten
 		defaultConfig := Config{
-			Port: 1337,
+			Port: 1234,
 		}
 
 		data, err := json.MarshalIndent(defaultConfig, "", "  ")
 		if err != nil {
 			log.Fatalf("Fehler beim Erzeugen der Standard-Config: %v", err)
-			return
+			return nil, err
 		}
 
+		// Schreibe die Standard-Konfiguration in die Datei.
 		err = os.WriteFile(configFile, data, 0644)
 		if err != nil {
 			log.Fatalf("Fehler beim Schreiben der Standard-Config: %v", err)
-			return
+			return nil, err
 		}
 	}
 
@@ -40,13 +49,24 @@ func main() {
 	data, err := os.ReadFile(configFile)
 	if err != nil {
 		log.Fatalf("Fehler beim Lesen der Config-Datei: %v", err)
-		return
+		return nil, err
 	}
 
+	// Parse die Konfigurationsdaten in die Config-Struktur.
 	var config Config
 	err = json.Unmarshal(data, &config)
 	if err != nil {
 		log.Fatalf("Fehler beim Parsen der Config-Datei: %v", err)
+		return nil, err
+	}
+
+	return &config, nil
+}
+
+func main() {
+	config, err := getConfig()
+	if err != nil {
+		log.Fatalf("Fehler beim Laden der Konfiguration: %v", err)
 		return
 	}
 
