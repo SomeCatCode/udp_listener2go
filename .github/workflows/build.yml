@@ -1,0 +1,100 @@
+name: Go Build and Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+env:
+  GOVERSION: 1.24.3
+
+jobs:
+  build-linux:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - uses: actions/setup-go@v5
+      with:
+        go-version: ${{ env.GOVERSION }}
+
+    - name: Build
+      run: |
+        go mod verify
+        go build -v -o udp_listener2go ./...
+        go vet ./...
+
+    - name: Archive Binary
+      run: |
+        TAG_NAME=${GITHUB_REF##*/}
+        ARCHIVE_NAME="udp_listener2go-${TAG_NAME}-linux.tar.gz"
+        tar -czf "$ARCHIVE_NAME" udp_listener2go
+        echo "ARCHIVE_NAME=$ARCHIVE_NAME" >> $GITHUB_ENV
+
+
+    - name: Upload Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: linux-build
+        path: ${{ env.ARCHIVE_NAME }}
+
+  build-windows:
+    runs-on: windows-latest
+
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - uses: actions/setup-go@v5
+      with:
+        go-version: ${{ env.GOVERSION }}
+
+    - name: Build
+      run: |
+        go mod verify
+        go build -v -o udp_listener2go.exe ./...
+        go vet ./...
+
+    - name: Archive Binary
+      run: |
+        $TAG_NAME = "${env:GITHUB_REF}".Split("/")[-1]
+        $ARCHIVE_NAME = "udp_listener2go-$TAG_NAME-windows.zip"
+        Compress-Archive -Path udp_listener2go.exe -DestinationPath $ARCHIVE_NAME
+        "ARCHIVE_NAME=$ARCHIVE_NAME" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+    - name: Upload Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: windows-build
+        path: ${{ env.ARCHIVE_NAME }}
+
+  release:
+    runs-on: ubuntu-latest
+    needs: [build-linux, build-windows]
+
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Download Linux Artifact
+      uses: actions/download-artifact@v4
+      with:
+        name: linux-build
+        path: ./release
+
+    - name: Download Windows Artifact
+      uses: actions/download-artifact@v4
+      with:
+        name: windows-build
+        path: ./release
+
+    - name: Upload to GitHub Release
+      uses: softprops/action-gh-release@da05d552573ad5aba039eaac05058a918a7bf631
+      with:
+        files: ./release/*
+        token: ${{ secrets.GITHUB_TOKEN }}
