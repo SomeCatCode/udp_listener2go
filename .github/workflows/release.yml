@@ -1,0 +1,53 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+env:
+  APP: udp_listener2go
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version: stable
+          check-latest: true
+
+      - name: Verify
+        run: |
+          go mod verify
+          go vet ./...
+
+      - name: Build
+        env:
+          CGO_ENABLED: '0'
+        run: |
+          mkdir -p dist
+          for target in windows/amd64 windows/arm64 linux/amd64 linux/arm64 darwin/amd64 darwin/arm64; do
+            export GOOS=${target%/*} GOARCH=${target#*/}
+            name="${APP}-${GITHUB_REF_NAME}-${GOOS}-${GOARCH}"
+            bin="${APP}"
+            [ "$GOOS" = windows ] && bin="${APP}.exe"
+            go build -trimpath -ldflags "-s -w -X main.version=${GITHUB_REF_NAME}" -o "build/${name}/${bin}" .
+            cp README.md LICENSE "build/${name}/"
+            if [ "$GOOS" = windows ]; then
+              (cd "build/${name}" && zip -q "../../dist/${name}.zip" *)
+            else
+              tar -czf "dist/${name}.tar.gz" -C "build/${name}" .
+            fi
+          done
+          (cd dist && sha256sum * > checksums.txt)
+
+      - name: Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" dist/* --title "$GITHUB_REF_NAME" --generate-notes --verify-tag

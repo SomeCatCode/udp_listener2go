@@ -1,115 +1,86 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"net"
 	"os"
 	"path/filepath"
-	"time"
 )
+
+var version = "dev"
 
 type Config struct {
 	Port int `json:"port"`
 }
 
 func getConfig() (*Config, error) {
-	// Ermittle den Pfad der ausführbaren Datei und das Verzeichnis, in dem sie sich befindet.
 	exPath, err := os.Executable()
 	if err != nil {
-		log.Fatalf("Fehler beim Ermitteln des Executable-Pfads: %v", err)
+		return nil, fmt.Errorf("Executable-Pfad nicht ermittelbar: %w", err)
 	}
-	exDir := filepath.Dir(exPath)
+	configFile := filepath.Join(filepath.Dir(exPath), "udp_listener2go.json")
 
-	configFile := filepath.Join(exDir, "udp_listener2go.json")
-
-	// Überprüfe, ob Config-Datei existiert
-	if _, err := os.Stat(configFile); os.IsNotExist(err) {
-		// Erstelle Config-Datei mit Standardwerten
-		defaultConfig := Config{
-			Port: 1234,
-		}
-
-		data, err := json.MarshalIndent(defaultConfig, "", "  ")
+	if _, err := os.Stat(configFile); errors.Is(err, os.ErrNotExist) {
+		data, err := json.MarshalIndent(Config{Port: 1234}, "", "  ")
 		if err != nil {
-			log.Fatalf("Fehler beim Erzeugen der Standard-Config: %v", err)
-			return nil, err
+			return nil, fmt.Errorf("Standard-Config nicht erzeugbar: %w", err)
 		}
-
-		// Schreibe die Standard-Konfiguration in die Datei.
-		err = os.WriteFile(configFile, data, 0644)
-		if err != nil {
-			log.Fatalf("Fehler beim Schreiben der Standard-Config: %v", err)
-			return nil, err
+		if err := os.WriteFile(configFile, data, 0644); err != nil {
+			return nil, fmt.Errorf("Standard-Config nicht schreibbar: %w", err)
 		}
+		log.Printf("Standard-Config erstellt: %s", configFile)
 	}
 
-	// Lese Config-Datei
 	data, err := os.ReadFile(configFile)
 	if err != nil {
-		log.Fatalf("Fehler beim Lesen der Config-Datei: %v", err)
-		return nil, err
+		return nil, fmt.Errorf("Config-Datei nicht lesbar: %w", err)
 	}
 
-	// Parse die Konfigurationsdaten in die Config-Struktur.
 	var config Config
-	err = json.Unmarshal(data, &config)
-	if err != nil {
-		log.Fatalf("Fehler beim Parsen der Config-Datei: %v", err)
-		return nil, err
+	if err := json.Unmarshal(data, &config); err != nil {
+		return nil, fmt.Errorf("Config-Datei %s ungültig: %w", configFile, err)
 	}
 
 	return &config, nil
 }
 
 func main() {
+	log.Printf("udp_listener2go %s", version)
+
 	config, err := getConfig()
 	if err != nil {
 		log.Fatalf("Fehler beim Laden der Konfiguration: %v", err)
-		return
 	}
 
-	// Starte Server
-	addr := net.UDPAddr{
-		Port: config.Port,
-		IP:   net.ParseIP("0.0.0.0"),
-	}
-
-	conn, err := net.ListenUDP("udp", &addr)
+	conn, err := net.ListenUDP("udp", &net.UDPAddr{Port: config.Port})
 	if err != nil {
-		fmt.Println("Error listening:", err)
-		return
+		log.Fatalf("Error listening: %v", err)
 	}
 	defer conn.Close()
 
-	fmt.Println("Listening on", conn.LocalAddr().String())
+	log.Printf("Listening on %s", conn.LocalAddr())
 
-	buffer := make([]byte, 1024)
+	// max. UDP-Payload
+	buffer := make([]byte, 65535)
 
 	for {
 		n, src, err := conn.ReadFromUDP(buffer)
 		if err != nil {
-			fmt.Println("Error reading:", err)
+			log.Printf("Error reading: %v", err)
 			continue
 		}
-		data := buffer[:n]
-		fmt.Printf("Received packet from %v at %v\n", src, time.Now())
+		data := bytes.TrimSpace(buffer[:n])
+		log.Printf("Received %d bytes from %v", n, src)
 
-		if isJSON(data) {
-			var obj map[string]interface{}
-			if err := json.Unmarshal(data, &obj); err != nil {
-				fmt.Println("Error decoding JSON:", err)
-			} else {
-				fmt.Println("Decoded JSON:", obj)
-			}
+		var pretty bytes.Buffer
+		if json.Valid(data) && json.Indent(&pretty, data, "", "  ") == nil {
+			fmt.Println(pretty.String())
 		} else {
-			fmt.Println("Received:", string(data))
+			fmt.Println(string(data))
 		}
 	}
-}
-
-func isJSON(data []byte) bool {
-	var js json.RawMessage
-	return json.Unmarshal(data, &js) == nil
 }

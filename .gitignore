@@ -1,3 +1,5 @@
 udp_listener2go
 udp_listener2go.exe
 udp_listener2go.json
+build/
+dist/
